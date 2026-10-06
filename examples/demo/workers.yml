@@ -1,0 +1,14 @@
+# Input of `npm run manifests`: one CronJob per dispatcher, one Deployment per consumer.
+placeholders:
+  KUB_SERVICE_NAME: task-demo-service
+# Start the workers without a shell, so SIGTERM reaches Node.js and consumers drain.
+entrypoint: ['node', 'dist/message-bus-cli.js']
+dispatchers:
+  - module: tasks
+    schema: false
+consumers:
+  - module: notifications
+    schema: false
+    replicas: 2
+  - module: audit
+    schema: false

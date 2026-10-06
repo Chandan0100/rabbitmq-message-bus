@@ -1,0 +1,8 @@
+# Applies when building website/Dockerfile from the repository root.
+*
+!docs
+!website
+website/node_modules
+website/.vitepress/dist
+website/.vitepress/cache
+website/guide

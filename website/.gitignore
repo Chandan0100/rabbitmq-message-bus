@@ -1,0 +1,5 @@
+node_modules
+.vitepress/dist
+.vitepress/cache
+# Generated from ../docs by scripts/sync-docs.mjs
+guide

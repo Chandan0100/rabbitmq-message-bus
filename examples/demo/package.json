@@ -1,0 +1,32 @@
+{
+  "name": "rabbitmq-message-bus-demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A small task service that uses rabbitmq-message-bus, with a dashboard to watch it work.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "broker": "docker compose up -d --wait",
+    "broker:down": "docker compose down -v",
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && node dist/main.js",
+    "start:api": "npm run build && DEMO_INLINE_WORKERS=false node dist/main.js",
+    "handle-messages": "node dist/message-bus-cli.js handle-messages",
+    "dispatch-messages": "node dist/message-bus-cli.js dispatch-messages",
+    "manifests": "rabbitmq-bus-k8s generate --config workers.yml --out k8s",
+    "library": "npm run build --prefix ../.. && rm -rf node_modules/rabbitmq-message-bus && npm install"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/core": "^11.0.1",
+    "@nestjs/platform-express": "^11.0.1",
+    "rabbitmq-message-bus": "file:../..",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "typescript": "^5.7.3"
+  }
+}

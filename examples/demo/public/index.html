@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Message bus playground</title>
+    <script>
+      // Applied before the first paint so a chosen theme never flashes.
+      try {
+        const theme = localStorage.getItem('demo-theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" data-icon="flow"></span>
+        <h1>Message bus playground</h1>
+        <p>A task service using <code>rabbitmq-message-bus</code>. Publish events, break things, watch what the library does.</p>
+      </div>
+      <div class="topbar-controls">
+        <div class="control">
+          <span class="control-label" id="mode-label">Exchange type</span>
+          <div class="segmented" id="mode" role="radiogroup" aria-labelledby="mode-label"></div>
+        </div>
+        <div class="control">
+          <span class="control-label" id="theme-label">Theme</span>
+          <div class="segmented" id="theme" role="radiogroup" aria-labelledby="theme-label">
+            <button role="radio" data-theme-choice="auto" data-icon="monitor" title="Follow the system" aria-label="Follow the system"></button>
+            <button role="radio" data-theme-choice="light" data-icon="sun" title="Light" aria-label="Light"></button>
+            <button role="radio" data-theme-choice="dark" data-icon="moon" title="Dark" aria-label="Dark"></button>
+          </div>
+        </div>
+        <div class="control">
+          <span class="control-label">Broker</span>
+          <span class="status" id="broker-status"></span>
+        </div>
+        <a class="button ghost" id="management-link" target="_blank" rel="noopener" data-icon="external">RabbitMQ console</a>
+        <button class="button ghost" id="reset" data-icon="retry" title="Purge the queues and clear the tables">Reset</button>
+      </div>
+    </header>
+
+    <div class="banner" id="banner" hidden></div>
+
+    <main>
+      <section class="card" aria-labelledby="flow-title">
+        <div class="card-head">
+          <h2 id="flow-title" data-icon="flow">How a message travels</h2>
+          <p>From a change in the database to the processors, with what is waiting at each step right now.</p>
+          <p class="legend" aria-hidden="true">
+            <span><i></i>A message moving to the next step</span>
+            <span><i class="ringed"></i>A step whose numbers just changed</span>
+          </p>
+          <p class="ticker" id="ticker" aria-hidden="true"></p>
+        </div>
+        <div class="diagram">
+          <div class="flow" id="flow"></div>
+          <div class="recovery" id="recovery"></div>
+          <div class="packets" id="packets" aria-hidden="true"></div>
+        </div>
+      </section>
+
+      <div class="columns split">
+        <section class="card" aria-labelledby="guide-title">
+          <div class="card-head">
+            <h2 id="guide-title" data-icon="flask">Guided experiments</h2>
+            <p>Start here. Each one sets the processors up, publishes, and tells you what to watch.</p>
+          </div>
+          <ol class="experiments" id="experiments"></ol>
+        </section>
+
+        <section class="card" aria-labelledby="manual-title">
+          <div class="card-head">
+            <h2 id="manual-title" data-icon="sliders">Or do it by hand</h2>
+            <p>Each action changes a task and writes its events to the outbox, in one transaction.</p>
+          </div>
+          <div class="button-row" id="actions">
+            <button class="button primary" data-action="create" data-icon="plus">Create a task</button>
+            <button class="button primary" data-action="assign" data-icon="user">Assign a task</button>
+            <button class="button primary" data-action="complete" data-icon="check">Complete a task</button>
+            <div class="segmented small" id="count" role="radiogroup" aria-label="How many at once">
+              <button role="radio" aria-checked="true" data-count="1">×1</button>
+              <button role="radio" aria-checked="false" data-count="5">×5</button>
+              <button role="radio" aria-checked="false" data-count="20">×20</button>
+            </div>
+          </div>
+          <div class="field-row">
+            <label class="switch">
+              <input type="checkbox" id="auto-dispatch" />
+              <span>Dispatch the outbox every 3 seconds</span>
+            </label>
+            <button class="button" id="dispatch" data-icon="send">Dispatch now</button>
+          </div>
+          <p class="hint">In production the dispatcher is a CronJob running <code>dispatch-messages</code>. Turn the timer off to see events wait in the outbox.</p>
+          <hr />
+          <h3>Break things</h3>
+          <p class="hint">Choose how each processor behaves in the diagram above. These cover the rest.</p>
+          <div class="button-grid" id="chaos">
+            <button class="button" data-chaos="kill-connections" data-icon="zap">Cut the consumers' connections</button>
+            <button class="button" data-chaos="duplicate" data-icon="copy">Publish the last message again</button>
+            <button class="button" data-chaos="unhandled" data-icon="help">Publish an event nobody handles</button>
+            <button class="button" data-chaos="delete-queue/audit" data-icon="trash">Delete the audit queue</button>
+          </div>
+          <div id="workers" class="button-grid"></div>
+        </section>
+      </div>
+
+      <div class="columns two">
+        <section class="card" aria-labelledby="messages-title">
+          <div class="card-head">
+            <h2 id="messages-title" data-icon="mail">Messages</h2>
+            <p>The latest events and how far each processor got with them. Select one to follow it in the log.</p>
+          </div>
+          <div class="table-wrap tall">
+            <table id="messages">
+              <thead>
+                <tr><th>Time</th><th>Event</th><th>Outbox</th><th>Processors</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="empty" id="messages-empty">Nothing published yet. Use "Make something happen".</p>
+        </section>
+
+        <section class="card" aria-labelledby="log-title">
+          <div class="card-head with-controls">
+            <div>
+              <h2 id="log-title" data-icon="terminal">Live log</h2>
+              <p id="log-caption">What the library and the processors report, from every process.</p>
+            </div>
+            <div class="segmented small" id="log-filter" role="radiogroup" aria-label="Log source">
+              <button role="radio" aria-checked="true" data-source="all">All</button>
+              <button role="radio" aria-checked="false" data-source="library">Library</button>
+              <button role="radio" aria-checked="false" data-source="handler">Processors</button>
+              <button role="radio" aria-checked="false" data-source="demo">Demo</button>
+            </div>
+          </div>
+          <div class="terminal">
+            <div class="terminal-bar">
+              <span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="terminal-title">tail -f message-bus.log</span>
+              <span class="terminal-count" id="log-count">0 lines</span>
+              <button class="terminal-button" id="log-follow" aria-pressed="true" title="Keep the newest line in view">Follow</button>
+              <button class="terminal-button" id="log-copy" data-icon="copy" title="Copy the visible lines">Copy</button>
+              <button class="terminal-button" id="log-clear" data-icon="trash" title="Clear this view">Clear</button>
+            </div>
+            <div class="log" id="log" role="log" aria-live="off" tabindex="0"></div>
+            <div class="terminal-prompt" aria-hidden="true"><span class="prompt-sign">$</span><span id="log-prompt">waiting for messages</span><span class="cursor"></span></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="card" aria-labelledby="failed-title">
+        <div class="card-head with-controls">
+          <div>
+            <h2 id="failed-title" data-icon="alert">Error queue</h2>
+            <p>Messages that used up their retries. Each one carries why it failed and where to send it back.</p>
+          </div>
+          <button class="button" id="replay-all" data-icon="retry" hidden>Replay all</button>
+        </div>
+        <div class="table-wrap">
+          <table id="failed">
+            <thead>
+              <tr><th>Event</th><th>Failed in</th><th>Why</th><th>Last failure</th><th>Replays to</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="empty" id="failed-empty">Empty. Set a processor to "Always fails" and publish to send a message here.</p>
+      </section>
+
+      <section class="card" aria-labelledby="code-title">
+        <div class="card-head">
+          <h2 id="code-title" data-icon="file">Where this lives in the code</h2>
+          <p>Everything on this page is driven by a few files in <code>examples/demo/src</code>.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="codemap">
+            <thead><tr><th>What you see</th><th>File</th><th>Guide</th></tr></thead>
+            <tbody>
+              <tr><td>Task changes and their events, written together</td><td><code>tasks/tasks.service.ts</code></td><td>docs/04-publishing.md</td></tr>
+              <tr><td>The outbox table as the library sees it</td><td><code>infrastructure/sqlite-outbox.store.ts</code></td><td>docs/04-publishing.md</td></tr>
+              <tr><td>The dispatcher</td><td><code>tasks/tasks.producer.module.ts</code></td><td>docs/06-nestjs.md</td></tr>
+              <tr><td>Exchanges, queues and keys for each exchange type</td><td><code>infrastructure/messaging.config.ts</code></td><td>docs/05-exchange-types.md</td></tr>
+              <tr><td>A consumer: its queue, retries and processors</td><td><code>notifications/notifications.consumer.module.ts</code></td><td>docs/03-consuming.md</td></tr>
+              <tr><td>Which processor handles which event</td><td><code>notifications/notifications.handlers.ts</code></td><td>docs/03-consuming.md</td></tr>
+              <tr><td>A processor, with its inbox entry</td><td><code>notifications/processors/send-task-assigned-email.processor.ts</code></td><td>docs/03-consuming.md</td></tr>
+              <tr><td>The inbox table as the library sees it</td><td><code>infrastructure/sqlite-inbox.store.ts</code></td><td>docs/03-consuming.md</td></tr>
+              <tr><td>The worker commands</td><td><code>message-bus-cli.ts</code></td><td>docs/07-workers-and-deployment.md</td></tr>
+              <tr><td>Replaying from the error queue</td><td><code>dashboard/broker-inspector.service.ts</code></td><td>docs/03-consuming.md</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
